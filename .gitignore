@@ -1,0 +1,12 @@
+
+sandbox.ipynb
+
+**/*.pth
+
+.venv
+
+.jupyter/
+
+.ipynb_checkpoints/
+
+.DS_Store/  
