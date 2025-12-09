@@ -1,7 +1,6 @@
 
 sandbox.ipynb
 
-**/*.pth
 
 .venv
 
@@ -10,3 +9,5 @@ sandbox.ipynb
 .ipynb_checkpoints/
 
 .DS_Store/  
+
+data/
