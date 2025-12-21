@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from typing import Literal
 import random
 import numpy as np
@@ -8,6 +9,8 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
+import cv2
+from PIL import Image
 
 plt.style.use("ggplot")
 
@@ -278,3 +281,127 @@ def save_experiment_json(history, filename):
     with open(filename, "w") as f:
         json.dump(history, f, indent=4)
     print(f"History saved to {filename}")
+
+
+def get_last_conv_layer(model):
+    last_conv_layer = None
+    # Iterate through all modules in the model
+    for module in model.modules():
+        # Check if the module is a convolutional layer (Conv2d, Conv3d, etc.)
+        if isinstance(
+            module, (nn.Conv2d, nn.Conv3d, nn.ConvTranspose2d, nn.ConvTranspose3d)
+        ):
+            last_conv_layer = module
+    return last_conv_layer
+
+
+def process_image_pytorch(image_path, transform=None):
+    import torch.nn as nn
+    from torchvision import transforms
+
+    """Process image for PyTorch CNN model"""
+
+    img = Image.open(image_path).convert("RGB")
+    if transform is not None:
+        img = transform(img)
+    else:
+        img = np.array(img)
+    return img.unsqueeze(0)
+
+
+def get_prediction_pytorch(model, image):
+    """Get prediction from PyTorch model"""
+    import torch
+
+    CLASSES = ["COVID", "NORMAL", "PNEUMONIA"]
+    model.eval()
+    with torch.no_grad():
+        outputs = model(image)
+        probability = torch.softmax(outputs, dim=1)
+        prediction = torch.argmax(probability, dim=1).tolist()[0]
+        confidence = probability[:, prediction][0]
+    return CLASSES[prediction], confidence
+
+
+def make_gradcam_heatmap(model, target_layer, img_tensor, pred_index=None):
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+
+    # Storage for gradients and activations
+    gradients = []
+    activations = []
+
+    # Define hook functions
+    def backward_hook(module, grad_in, grad_out):
+        # grad_out is a tuple, we want the first element
+        gradients.append(grad_out[0])
+
+    def forward_hook(module, input, output):
+        activations.append(output)
+
+    # Register hooks to the target layer
+    forward_handle = target_layer.register_forward_hook(forward_hook)
+    backward_handle = target_layer.register_backward_hook(backward_hook)
+
+    # 1. Forward Pass
+    raw_logits = model(img_tensor)
+    output = nn.Softmax(dim=1)(raw_logits)
+
+    # 2. Get Class Score
+    if pred_index is None:
+        pred_index = torch.argmax(output)
+    class_score = output[:, pred_index]
+
+    # 3. Backward Pass
+    model.zero_grad()
+    class_score.backward()
+
+    # --- Grad-CAM Logic ---
+
+    # Get the gradients and activations (and remove hooks)
+    grads = gradients[0]  # (B, C, H, W) e.g., (1, 512, 7, 7)
+    acts = activations[0]  # (B, C, H, W) e.g., (1, 512, 7, 7)
+    forward_handle.remove()
+    backward_handle.remove()
+
+    # 4. Compute alpha weights (Step 4)
+    # Global Average Pooling on gradients
+    pooled_grads = torch.mean(grads, dim=[0, 2, 3])  # (C,)
+
+    # 5. Create Heatmap (Step 5)
+    # Get activations for the specific image in batch (dim 0)
+    acts = acts[0]  # (C, H, W)
+    # Weighted sum: (C, H, W) * (C,) -> needs broadcasting
+    for i in range(acts.shape[0]):
+        acts[i, :, :] *= pooled_grads[i]  # In-place multiplication
+
+    # Sum across the channel dimension to get the raw heatmap
+    heatmap = torch.sum(acts, dim=0)
+
+    # 6. ReLU (Step 6)
+    heatmap = F.relu(heatmap)
+
+    # Normalize
+    heatmap /= torch.max(heatmap) + 1e-10  # Add epsilon to avoid div by zero
+
+    return heatmap.cpu().detach().numpy()
+
+
+def get_gradcam(img, heatmap, alpha=0.4):
+
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert to RGB for matplotlib
+
+    # Upsample heatmap to original image size
+    heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
+
+    # Convert heatmap to RGB (using 'jet' colormap)
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+
+    # Overlay the heatmap on the original image (alpha blending)
+    superimposed_img = heatmap * alpha + img * (1 - alpha)
+    superimposed_img = np.clip(superimposed_img, 0, 255).astype(np.uint8)
+
+    return superimposed_img
