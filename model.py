@@ -2,6 +2,40 @@ import torch
 import torch.nn as nn
 from torchvision import models
 
+class BaselineCNN(nn.Module):
+    def __init__(self, num_classes):
+        super(BaselineCNN, self).__init__()
+        
+        # Convolutional Block
+        self.conv = nn.Conv2d(
+            in_channels=3, out_channels=32,
+            kernel_size=3, padding=1)
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool2d(
+            kernel_size=2, stride=2)
+        
+        # Adaptive Pooling
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+        
+        # Flatten & Classifier
+        self.flatten = nn.Flatten()
+        self.fc = nn.Linear(
+            in_features=32 * 4 * 4, 
+            out_features=num_classes)
+        
+    def forward(self, x):
+        # 1. Feature Extraction
+        x = self.conv(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        
+        # 2. Downsampling
+        x = self.adaptive_pool(x)
+        
+        # 3. Classification
+        x = self.flatten(x)
+        x = self.fc(x)
+        return x
 
 class SimpleEfficientNet(nn.Module):
     def __init__(self, num_classes):
