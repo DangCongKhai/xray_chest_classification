@@ -51,7 +51,7 @@ class EarlyStopping:
         if (
             score > self.best_score + self.min_delta
             if self.mode == "max"
-            else self.score < self.best_score - self.min_delta
+            else score < self.best_score - self.min_delta
         ):
             self.best_score = score
             self.best_epoch = epoch + 1
