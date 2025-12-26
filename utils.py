@@ -405,3 +405,29 @@ def get_gradcam(img, heatmap, alpha=0.4):
     superimposed_img = np.clip(superimposed_img, 0, 255).astype(np.uint8)
 
     return superimposed_img
+
+def plot_xray_result(input_img, gradcam_img, prediction, confidence):
+    """
+    input_img: PIL Image or numpy array
+    gradcam_img: numpy array (H, W, 3)
+    prediction: str
+    confidence: float
+    """
+    fig, axs = plt.subplots(1, 2, figsize=(14, 7))
+    color = "red" if prediction.lower() != "normal" else "green"
+
+    # LEFT — Grad-CAM (Prediction)
+    axs[1].imshow(gradcam_img)
+    axs[1].set_title(
+        f"PREDICTION: {prediction}\nConfidence: {confidence:.4f}",
+        color=color
+    )
+    axs[1].axis("off")
+
+    # RIGHT — Input Image
+    axs[0].imshow(input_img)
+    axs[0].set_title("INPUT")
+    axs[0].axis("off")
+
+    plt.tight_layout()
+    return fig
